@@ -73,6 +73,18 @@ timesfm-api/.env.local
 timesfm-api/.env.production
 timesfm-api/*.rdb
 
+# Data files that should be downloaded at runtime
+timesfm-api/data/stocks/*.csv
+timesfm-api/data/stocks/*.json
+timesfm-api/curl_results/
+timesfm-api/results/
+timesfm-api/uploads/
+
+# Test artifacts
+timesfm-api/test_*.json
+timesfm-api/test_*.csv
+timesfm-api/benchmark_results/
+
 # Plan files (from planning tools)
 .plan/
 
