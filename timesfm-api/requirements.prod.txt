@@ -1,0 +1,43 @@
+# Production requirements for TimesFM API
+
+# Core dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+python-multipart>=0.0.6
+
+# Async support
+httpx>=0.25.0
+aiofiles>=23.2.1
+
+# ML/AI dependencies
+torch>=2.0.0
+numpy>=1.26.4
+pandas>=2.0.0
+scikit-learn>=1.3.0
+huggingface_hub>=0.23.0
+safetensors>=0.5.3
+
+# Redis for caching
+redis[asyncio]>=4.6.0
+
+# Prometheus metrics
+prometheus-client>=0.18.0
+
+# System monitoring
+psutil>=5.9.0
+
+# Compression middleware
+python-dotenv>=1.0.0
+
+# Logging and monitoring
+structlog>=23.2.0
+
+# Additional production dependencies
+tenacity>=8.2.3
+orjson>=3.9.10
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# GPU monitoring (optional)
+nvidia-ml-py3>=12.535.133

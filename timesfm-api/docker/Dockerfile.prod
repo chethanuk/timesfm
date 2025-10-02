@@ -1,0 +1,61 @@
+# Production Dockerfile for TimesFM API
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as base
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV CMAKE_CUDA_ARCHITECTURES=all
+ENV CUDA_VISIBLE_DEVICES=0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-pip \
+    python3.10-dev \
+    python3.10-venv \
+    curl \
+    wget \
+    git \
+    build-essential \
+    cmake \
+    pkg-config \
+    libhdf5-dev \
+    libssl-dev \
+    libffi-dev \
+    libgomp1 \
+    libopenblas-dev \
+    liblapack-dev \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r timesfm && useradd -r -g timesfm -d /app -s /bin/bash timesfm
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.prod.txt /app/
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir -r requirements.prod.txt
+
+# Copy application code
+COPY app.py /app/
+COPY src/ /app/src/
+
+# Set ownership
+RUN chown -R timesfm:timesfm /app
+
+# Switch to app user
+USER timesfm
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run application
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
