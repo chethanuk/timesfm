@@ -1,0 +1,406 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: timesfm-api
+  namespace: timesfm
+  labels:
+    app: timesfm-api
+    version: v2.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: timesfm-api
+  template:
+    metadata:
+      labels:
+        app: timesfm-api
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: timesfm-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: timesfm-api
+        image: timesfm-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: MODEL_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: timesfm-config
+              key: model-size
+        - name: MODEL_CHECKPOINT_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: timesfm-config
+              key: model-checkpoint-path
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: timesfm-secrets
+              key: redis-url
+        - name: WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: timesfm-config
+              key: api-workers
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: timesfm-config
+              key: log-level
+        - name: CUDA_VISIBLE_DEVICES
+          valueFrom:
+            configMapKeyRef:
+              name: timesfm-config
+              key: cuda-visible-devices
+        - name: GRAFANA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: timesfm-secrets
+              key: grafana-password
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+            nvidia.com/gpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 30
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+        - name: tmp
+          mountPath: /tmp
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: timesfm-model-pvc
+      - name: logs
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      nodeSelector:
+        accelerator: nvidia-tesla-v100
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - timesfm-api
+              topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 120
+      priorityClassName: high-priority
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timesfm-api-service
+  namespace: timesfm
+  labels:
+    app: timesfm-api
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: timesfm-api
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: timesfm-api-hpa
+  namespace: timesfm
+  labels:
+    app: timesfm-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: timesfm-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: timesfm_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: timesfm-api-ingress
+  namespace: timesfm
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type"
+spec:
+  tls:
+  - hosts:
+    - timesfm-api.example.com
+    secretName: timesfm-api-tls
+  rules:
+  - host: timesfm-api.example.com
+    http:
+      paths:
+      - path: /forecast
+        pathType: Prefix
+        backend:
+          service:
+            name: timesfm-api-service
+            port:
+              number: 80
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: timesfm-api-service
+            port:
+              number: 80
+      - path: /metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: timesfm-api-service
+            port:
+              number: 80
+      - path: /model/info
+        pathType: Prefix
+        backend:
+          service:
+            name: timesfm-api-service
+            port:
+              number: 80
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: timesfm-config
+  namespace: timesfm
+data:
+  model-size: "200M"
+  model-checkpoint-path: "/models/timesfm-200m.ckpt"
+  api-workers: "2"
+  log-level: "INFO"
+  cuda-visible-devices: "0"
+  preload-model: "true"
+  allowed-origins: "*"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: timesfm-secrets
+  namespace: timesfm
+type: Opaque
+data:
+  redis-url: cmVkaXM6Ly9yZWRpczo2Mzc5  # redis://redis:6379 (base64 encoded)
+  grafana-password: YWRtaW4xMjM=  # admin123 (base64 encoded)
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: timesfm-api
+  namespace: timesfm
+  annotations:
+    iam.gke.io/gcp-service-account: timesfm-api@example.iam.gserviceaccount.com
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: timesfm-model-pvc
+  namespace: timesfm
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+  namespace: timesfm
+value: 1000000
+globalDefault: false
+description: "High priority class for TimesFM API pods"
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: timesfm-api-pdb
+  namespace: timesfm
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: timesfm-api
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: timesfm-limits
+  namespace: timesfm
+spec:
+  limits:
+  - default:
+      cpu: "4"
+      memory: "8Gi"
+    defaultRequest:
+      cpu: "2"
+      memory: "4Gi"
+    type: Container
+  - max:
+      cpu: "8"
+      memory: "16Gi"
+    min:
+      cpu: "1"
+      memory: "2Gi"
+    type: Container
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: timesfm-quota
+  namespace: timesfm
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "10"
+    requests.storage: 100Gi
+    pods: "20"
+    services: "10"
+    secrets: "10"
+    configmaps: "10"

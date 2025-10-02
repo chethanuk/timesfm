@@ -1,8 +1,81 @@
+# Virtual environments
 .venv/
+venv/
+env/
+.ENV
+.env/
+
+# Build and distribution
 dist/
+build/
+*.egg-info/
+*.pyc
+*.pyo
+*.pyd
+
+# Cache and temporary files
 __pycache__/
+.cache/
+.pytest_cache/
+.mypy_cache/
+*.log
+*.tmp
+*.temp
+
+# Data and model files
 checkpoints/
 wandb/
 datasets/
 results/
-timesfm_jax.egg-info/
+models/
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+*.rdb
+dump.rdb
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test outputs
+.htmlcov/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation build
+docs/_build/
+site/
+
+# Local development files
+.local/
+*.db
+*.sqlite
+*.sqlite3
+
+# API-specific
+timesfm-api/logs/
+timesfm-api/__pycache__/
+timesfm-api/*.pyc
+timesfm-api/.env
+timesfm-api/.env.local
+timesfm-api/.env.production
+timesfm-api/*.rdb
+
+# Plan files (from planning tools)
+.plan/
+
+# Temporary upload directories
+uploads/
+tmp/
