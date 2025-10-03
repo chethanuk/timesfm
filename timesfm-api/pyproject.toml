@@ -1,0 +1,71 @@
+[project]
+name = "timesfm-api"
+version = "1.0.0"
+description = "Production-ready FastAPI service for TimesFM time series forecasting"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Chethan", email = "chethanuk@outlook.com"}
+]
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "numpy>=1.26.4",
+    "torch>=2.0.0",
+    "huggingface-hub>=0.23.0",
+    "safetensors>=0.5.3",
+    "python-multipart>=0.0.9",
+    # TimesFM - local editable install from parent directory
+    "timesfm @ file:///home/chethan/dev/timesfm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.2.0",
+    "ruff>=0.3.0",
+]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]  # Line too long
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "e2e: End-to-end tests with real model",
+    "performance: Performance benchmark tests",
+]
+addopts = "-v --strict-markers"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "numpy>=2.3.3",
+    "pandas>=2.3.3",
+]
